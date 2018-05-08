@@ -1,97 +1,107 @@
 package main
 
 import (
-	"crypto/tls"
-	"crypto/x509"
-	"io/ioutil"
-	"log"
-	"net/http"
-	"net/url"
-	"strings"
-	"sync"
+    "crypto/tls"
+    "crypto/x509"
+    "io/ioutil"
+    "log"
+    "net/http"
+    "net/url"
+    "strings"
+    "sync"
+    "time"
 )
 
-func StartClient(url_, heads, requestBody string, meth string, dka bool, responseChan chan *Response, waitGroup *sync.WaitGroup, tc int) {
-	defer waitGroup.Done()
+func StartClient(url_, heads, requestBody string, meth string, dka bool, responseChan chan *Response, waitGroup *sync.WaitGroup, reqCnt int) {
+    defer waitGroup.Done()
 
-	var tr *http.Transport
+    tr := &http.Transport{
+        DisableKeepAlives:     dka,
+        IdleConnTimeout:       time.Millisecond * time.Duration(*idleConnTimeout),
+        ResponseHeaderTimeout: time.Millisecond * time.Duration(*respHeaderTimeout),
+    }
 
-	u, err := url.Parse(url_)
+    u, err := url.Parse(url_)
 
-	if err == nil && u.Scheme == "https" {
-		var tlsConfig *tls.Config
-		if *insecure {
-			tlsConfig = &tls.Config{
-				InsecureSkipVerify: true,
-			}
-		} else {
-			// Load client cert
-			cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
-			if err != nil {
-				log.Fatal(err)
-			}
+    if err == nil && u.Scheme == "https" {
+        var tlsConfig *tls.Config
+        if *insecure {
+            tlsConfig = &tls.Config{
+                InsecureSkipVerify: true,
+            }
+        } else {
+            // Load client cert
+            cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
+            if err != nil {
+                log.Fatal(err)
+            }
 
-			// Load CA cert
-			caCert, err := ioutil.ReadFile(*caFile)
-			if err != nil {
-				log.Fatal(err)
-			}
-			caCertPool := x509.NewCertPool()
-			caCertPool.AppendCertsFromPEM(caCert)
+            // Load CA cert
+            caCert, err := ioutil.ReadFile(*caFile)
+            if err != nil {
+                log.Fatal(err)
+            }
+            caCertPool := x509.NewCertPool()
+            caCertPool.AppendCertsFromPEM(caCert)
 
-			// Setup HTTPS client
-			tlsConfig = &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				RootCAs:      caCertPool,
-			}
-			tlsConfig.BuildNameToCertificate()
-		}
+            // Setup HTTPS client
+            tlsConfig = &tls.Config{
+                Certificates: []tls.Certificate{cert},
+                RootCAs:      caCertPool,
+            }
+            tlsConfig.BuildNameToCertificate()
+        }
+        tr.TLSClientConfig = tlsConfig
+        tr.TLSHandshakeTimeout = time.Millisecond * time.Duration(*tlsHandshakeTimeout)
+    }
 
-		tr = &http.Transport{TLSClientConfig: tlsConfig, DisableKeepAlives: dka}
-	} else {
-		tr = &http.Transport{DisableKeepAlives: dka}
-	}
+    reqTimes := 0
+    timer := NewTimer()
+    for {
+        requestBodyReader := strings.NewReader(requestBody)
+        req, _ := http.NewRequest(meth, url_, requestBodyReader)
+        sets := strings.Split(heads, "\n")
 
-	timer := NewTimer()
-	for {
-		requestBodyReader := strings.NewReader(requestBody)
-		req, _ := http.NewRequest(meth, url_, requestBodyReader)
-		sets := strings.Split(heads, "\n")
+        //Split incoming header string by \n and build header pairs
+        for i := range sets {
+            split := strings.SplitN(sets[i], ":", 2)
+            if len(split) == 2 {
+                req.Header.Set(split[0], split[1])
+            }
+        }
 
-		//Split incoming header string by \n and build header pairs
-		for i := range sets {
-			split := strings.SplitN(sets[i], ":", 2)
-			if len(split) == 2 {
-				req.Header.Set(split[0], split[1])
-			}
-		}
+        timer.Reset()
 
-		timer.Reset()
+        resp, err := tr.RoundTrip(req)
 
-		resp, err := tr.RoundTrip(req)
+        respObj := &Response{}
 
-		respObj := &Response{}
+        if err != nil {
+            respObj.Error = true
+            log.Println(err.Error())
+            respObj.ErrMsg = err.Error()
+        } else {
+            if resp.ContentLength < 0 { // -1 if the length is unknown
+                data, err := ioutil.ReadAll(resp.Body)
+                if err == nil {
+                    respObj.Size = int64(len(data))
+                } else {
+                    respObj.ErrMsg = err.Error()
+                }
+            } else {
+                respObj.Size = resp.ContentLength
+            }
+            respObj.StatusCode = resp.StatusCode
+            resp.Body.Close()
+        }
 
-		if err != nil {
-			respObj.Error = true
-		} else {
-			if resp.ContentLength < 0 { // -1 if the length is unknown
-				data, err := ioutil.ReadAll(resp.Body)
-				if err == nil {
-					respObj.Size = int64(len(data))
-				}
-			} else {
-				respObj.Size = resp.ContentLength
-			}
-			respObj.StatusCode = resp.StatusCode
-			resp.Body.Close()
-		}
+        respObj.Duration = timer.Duration()
+        reqTimes++
 
-		respObj.Duration = timer.Duration()
+        responseChan <- respObj
 
-		if len(responseChan) >= tc {
-			break
-		}
-		responseChan <- respObj
-	}
+        if reqTimes >= reqCnt {
+            break
+        }
+    }
 }
