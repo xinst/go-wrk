@@ -1,59 +1,15 @@
 package main
 
 import (
-    "crypto/tls"
-    "crypto/x509"
     "io/ioutil"
     "log"
     "net/http"
-    "net/url"
     "strings"
     "sync"
-    "time"
 )
 
-func StartClient(url_, heads, requestBody string, meth string, dka bool, responseChan chan *Response, waitGroup *sync.WaitGroup, reqCnt int) {
+func StartClient(tr *http.Transport, url_, heads, requestBody string, meth string, responseChan chan *Response, waitGroup *sync.WaitGroup, reqCnt int) {
     defer waitGroup.Done()
-
-    tr := &http.Transport{
-        DisableKeepAlives:     dka,
-        IdleConnTimeout:       time.Millisecond * time.Duration(*idleConnTimeout),
-        ResponseHeaderTimeout: time.Millisecond * time.Duration(*respHeaderTimeout),
-    }
-
-    u, err := url.Parse(url_)
-
-    if err == nil && u.Scheme == "https" {
-        var tlsConfig *tls.Config
-        if *insecure {
-            tlsConfig = &tls.Config{
-                InsecureSkipVerify: true,
-            }
-        } else {
-            // Load client cert
-            cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
-            if err != nil {
-                log.Fatal(err)
-            }
-
-            // Load CA cert
-            caCert, err := ioutil.ReadFile(*caFile)
-            if err != nil {
-                log.Fatal(err)
-            }
-            caCertPool := x509.NewCertPool()
-            caCertPool.AppendCertsFromPEM(caCert)
-
-            // Setup HTTPS client
-            tlsConfig = &tls.Config{
-                Certificates: []tls.Certificate{cert},
-                RootCAs:      caCertPool,
-            }
-            tlsConfig.BuildNameToCertificate()
-        }
-        tr.TLSClientConfig = tlsConfig
-        tr.TLSHandshakeTimeout = time.Millisecond * time.Duration(*tlsHandshakeTimeout)
-    }
 
     reqTimes := 0
     timer := NewTimer()

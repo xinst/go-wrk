@@ -23,6 +23,7 @@ var (
     reqCntPerConnect    = flag.Int("n", 1000, "request count per connection")
     disableKeepAlives   = flag.Bool("k", true, "if keep-alives are disabled")
     idleConnTimeout     = flag.Int("idleTimeout", 10000, "the idle connection time out, default is 60000ms(60s)")
+    maxIdleConnPerHost  = flag.Int("maxIdlePerHost", 10, "the max idle connection per host")
     dist                = flag.String("d", "", "dist mode")
     configFile          = flag.String("f", "", "json config file")
     config              Config
