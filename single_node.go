@@ -11,14 +11,7 @@ import (
     "time"
 )
 
-func SingleNode(toCall string) []byte {
-    responseChannel := make(chan *Response, *reqCntPerConnect*(*numConnections))
-
-    benchTime := NewTimer()
-    benchTime.Reset()
-    //TODO check ulimit
-    wg := &sync.WaitGroup{}
-
+func mkTransport(toCall string) *http.Transport {
     tr := &http.Transport{
         DisableKeepAlives:     *disableKeepAlives,
         IdleConnTimeout:       time.Millisecond * time.Duration(*idleConnTimeout),
@@ -59,6 +52,18 @@ func SingleNode(toCall string) []byte {
         tr.TLSClientConfig = tlsConfig
         tr.TLSHandshakeTimeout = time.Millisecond * time.Duration(*tlsHandshakeTimeout)
     }
+    return tr
+}
+
+func SingleNode(toCall string) []byte {
+    responseChannel := make(chan *Response, *reqCntPerConnect*(*numConnections))
+
+    benchTime := NewTimer()
+    benchTime.Reset()
+    //TODO check ulimit
+    wg := &sync.WaitGroup{}
+
+    tr := mkTransport(toCall)
 
     for i := 0; i < *numConnections; i++ {
         go StartClient(

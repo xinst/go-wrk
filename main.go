@@ -35,6 +35,8 @@ var (
     insecure            = flag.Bool("i", false, "TLS checks are disabled")
     tlsHandshakeTimeout = flag.Int("tlsTimeOut", 10000, "TLS handshake timeout, in ms, default is 10000ms(10s) ")
     respHeaderTimeout   = flag.Int("respTimeOut", 10000, "response header timeout, in ms, default is 10000ms(10s)")
+    reqRate             = flag.Uint64("rate", 300, "request rate per second")
+    dur                 = flag.Int("dur", 60, "duration for some time. in seconds")
 )
 
 func init() {
@@ -86,6 +88,8 @@ func main() {
         MasterNode()
     case "s":
         SlaveNode()
+    case "r":
+        RateAttack()
     default:
         SingleNode(target)
     }
